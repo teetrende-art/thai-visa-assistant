@@ -1,6 +1,18 @@
 require('dotenv').config();
 const { Bot, Keyboard } = require('grammy');
 const https = require('https');
+const http = require('http');
+
+// Simple web server for Render health checks
+const port = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Thai Visa Assistant is running! 🤖🇹🇭\n');
+});
+
+server.listen(port, () => {
+  console.log(`Web server listening on port ${port}`);
+});
 
 // Initialize bot
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN || 'YOUR_BOT_TOKEN');
