@@ -1,0 +1,14 @@
+{
+  "name": "thai-visa-assistant",
+  "version": "1.0.0",
+  "description": "AI-powered Thai visa Q&A assistant",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "node src/bot.js"
+  },
+  "dependencies": {
+    "grammy": "^1.21.1",
+    "dotenv": "^16.3.1"
+  }
+}
