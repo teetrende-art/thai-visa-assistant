@@ -1,28 +1,43 @@
 require('dotenv').config();
 const { Bot, Keyboard } = require('grammy');
 const express = require('express');
-const https = require('https');
 
 const app = express();
 app.use(express.json());
 
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN || 'YOUR_BOT_TOKEN');
 
-// Webhook route
-app.post(`/webhook/${process.env.TELEGRAM_BOT_TOKEN}`, async (req, res) => {
-  await bot.handleUpdate(req.body);
-  res.sendOk();
-});
-
-// Health check
+// Health check - keep Render awake
 app.get('/', (req, res) => {
   res.send('Thai Visa Assistant is running! 🤖🇹🇭\n');
 });
 
+// Health check for Render
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
+
+// Start server first, then bot
+const server = app.listen(port, async () => {
   console.log(`🤖 Thai Visa Assistant starting...`);
   console.log(`Web server listening on port ${port}`);
+  
+  // Start bot with long polling
+  try {
+    await bot.start();
+    console.log('✅ Bot is polling for updates...');
+  } catch (err) {
+    console.error('❌ Bot start error:', err.message);
+  }
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('Shutting down...');
+  await bot.stop();
+  server.close(() => process.exit(0));
 });
 
 // Visa knowledge base
