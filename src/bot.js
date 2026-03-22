@@ -8,7 +8,7 @@ app.use(express.json());
 
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN || 'YOUR_BOT_TOKEN');
 
-// Health check - pinger should hit this
+// Health check
 app.get('/', (req, res) => {
   res.send('Thai Visa Assistant is running! 🤖🇹🇭\n');
 });
@@ -24,24 +24,21 @@ const server = app.listen(port, async () => {
   console.log(`🤖 Thai Visa Assistant starting...`);
   console.log(`Server on port ${port}`);
   
-  // Use long polling
   await bot.start();
-  console.log('✅ Bot started with long polling!');
+  console.log('✅ Bot started!');
 });
 
-// Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('Shutting down...');
   await bot.stop();
   server.close(() => process.exit(0));
 });
 
-// AI Answer Function using OpenRouter
+// AI Answer Function with timeout
 async function getAIAnswer(question, language = 'en') {
   const apiKey = process.env.OPENROUTER_API_KEY;
   
   if (!apiKey) {
-    return null; // No AI, use fallback
+    return null;
   }
 
   const langPrompt = language === 'th' 
@@ -56,20 +53,20 @@ ${langPrompt}
 
 Keep answers:
 - Accurate and up-to-date
-- Concise but informative
+- Concise but informative (max 300 words)
 - Friendly and helpful
-- Include relevant official links when helpful
+- Use bullet points when helpful
 
 For complex cases, always suggest consulting with Thai immigration directly.`;
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const data = JSON.stringify({
       model: 'deepseek/deepseek-chat',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: question }
       ],
-      max_tokens: 800
+      max_tokens: 500
     });
 
     const options = {
@@ -84,10 +81,16 @@ For complex cases, always suggest consulting with Thai immigration directly.`;
       }
     };
 
+    // Set timeout - resolve after 10 seconds if no response
+    const timeout = setTimeout(() => {
+      resolve(null); // Return null to use fallback
+    }, 10000);
+
     const req = https.request(options, (res) => {
       let body = '';
       res.on('data', (chunk) => body += chunk);
       res.on('end', () => {
+        clearTimeout(timeout);
         try {
           const response = JSON.parse(body);
           if (response.choices && response.choices[0]) {
@@ -101,7 +104,11 @@ For complex cases, always suggest consulting with Thai immigration directly.`;
       });
     });
 
-    req.on('error', () => resolve(null));
+    req.on('error', () => {
+      clearTimeout(timeout);
+      resolve(null);
+    });
+    
     req.write(data);
     req.end();
   });
@@ -113,43 +120,43 @@ const visaInfo = {
     name: 'Tourist Visa (TR)',
     duration: '60 days (single entry)',
     extendable: 'Yes, up to 30 days extra',
-    cost: '~$40',
-    requirements: 'Passport valid 6+ months, return ticket, proof of funds'
+    cost: '~$40 (extension 1,900 baht)',
+    requirements: '• Passport valid 6+ months\n• Return ticket\n• Proof of funds (10,000 baht)\n• Hotel booking or address in Thailand'
   },
   'exemption': {
     name: 'Visa Exemption',
     duration: '30 days (by air) / 15 days (by land)',
     extendable: 'No',
     cost: 'Free',
-    requirements: 'Passport valid 6+ months, return ticket'
+    requirements: '• Passport valid 6+ months\n• Return ticket'
   },
   'elite-visa': {
     name: 'Thailand Elite Visa',
     duration: '5-20 years',
     extendable: 'Yes',
-    cost: '$16,000 - $60,000',
-    requirements: 'Membership program, no criminal record'
+    cost: '• Elite Easy: $16,000 (5 years)\n• Elite Premium: $32,000 (10 years)\n• Elite Ultimate: $60,000 (20 years)',
+    requirements: '• Membership program purchase\n• No criminal record\n• No TB or serious diseases'
   },
   'work-permit': {
     name: 'Work Permit',
     duration: '1-2 years (linked to employment)',
     extendable: 'Yes',
-    cost: '~$100',
-    requirements: 'Job offer, degree, work experience, company requirements'
+    cost: '~1,000-5,000 baht',
+    requirements: '• Non-immigrant visa (type B)\n• Job offer from Thai company\n• Degree certificate\n• Work experience\n• Company requirements met'
   },
   'retirement': {
     name: 'Retirement Visa',
     duration: '1 year',
     extendable: 'Yes',
-    cost: '~$400',
-    requirements: '50+ years, 800,000 baht in bank OR monthly income 65,000 baht'
+    cost: '~1,000 baht',
+    requirements: '• Age 50 or older\n• 800,000 baht in Thai bank (3+ months)\nOR\n• Monthly income 65,000+ baht\n• No criminal record'
   },
   'education': {
     name: 'Education Visa',
     duration: '3-12 months',
     extendable: 'Yes',
-    cost: '~$100',
-    requirements: 'Enrolled in Thai school/university'
+    cost: '~1,000-5,000 baht',
+    requirements: '• Enrolled in Thai school/university\n• School acceptance letter\n• Proof of funds\n• No criminal record'
   }
 };
 
@@ -210,9 +217,9 @@ bot.hears('🇹🇭 ภาษาไทย', async (ctx) => {
 });
 
 // Handle visa type buttons
-bot.hears('🏝️ Tourist Visa', async (ctx) => {
-  const info = visaInfo['tourist-visa'];
-  await ctx.reply(`
+const sendVisaInfo = async (ctx, visaKey) => {
+  const info = visaInfo[visaKey];
+  const message = `
 *${info.name}*
 
 ⏰ Duration: ${info.duration}
@@ -220,79 +227,19 @@ bot.hears('🏝️ Tourist Visa', async (ctx) => {
 💰 Cost: ${info.cost}
 
 📋 Requirements:
-${info.requirement}
+${info.requirements}
 
-Reply with *ask* to ask a specific question!
-  `, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
-});
+_Reply with any question for AI help!_
+  `;
+  
+  await ctx.reply(message, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
+};
 
-bot.hears('💳 Elite Visa', async (ctx) => {
-  const info = visaInfo['elite-visa'];
-  await ctx.reply(`
-*${info.name}*
-
-⏰ Duration: ${info.duration}
-🔄 Extendable: ${info.extendable}
-💰 Cost: ${info.cost}
-
-📋 Requirements:
-${info.requirement}
-
-Reply with *ask* to ask a specific question!
-  `, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
-});
-
-bot.hears('💼 Work Permit', async (ctx) => {
-  const info = visaInfo['work-permit'];
-  await ctx.reply(`
-*${info.name}*
-
-⏰ Duration: ${info.duration}
-🔄 Extendable: ${info.extendable}
-💰 Cost: ${info.cost}
-
-📋 Requirements:
-${info.requirement}
-
-⚠️ Note: You need a work permit to work legally. Employment without permit = criminal offense.
-
-Reply with *ask* to ask a specific question!
-  `, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
-});
-
-bot.hears('🏖️ Retirement', async (ctx) => {
-  const info = visaInfo['retirement'];
-  await ctx.reply(`
-*${info.name}*
-
-⏰ Duration: ${info.duration}
-🔄 Extendable: ${info.extendable}
-💰 Cost: ${info.cost}
-
-📋 Requirements:
-${info.requirement}
-
-Reply with *ask* to ask a specific question!
-  `, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
-});
-
-bot.hears('📚 Education', async (ctx) => {
-  const info = visaInfo['education'];
-  await ctx.reply(`
-*${info.name}*
-
-⏰ Duration: ${info.duration}
-🔄 Extendable: ${info.extendable}
-💰 Cost: ${info.cost}
-
-📋 Requirements:
-${info.requirement}
-
-Popular options: Thai language schools, university programs, martial arts schools.
-
-Reply with *ask* to ask a specific question!
-  `, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
-});
+bot.hears('🏝️ Tourist Visa', async (ctx) => sendVisaInfo(ctx, 'tourist-visa'));
+bot.hears('💳 Elite Visa', async (ctx) => sendVisaInfo(ctx, 'elite-visa'));
+bot.hears('💼 Work Permit', async (ctx) => sendVisaInfo(ctx, 'work-permit'));
+bot.hears('🏖️ Retirement', async (ctx) => sendVisaInfo(ctx, 'retirement'));
+bot.hears('📚 Education', async (ctx) => sendVisaInfo(ctx, 'education'));
 
 bot.hears('🔗 Quick Links', async (ctx) => {
   await ctx.reply(`
@@ -352,7 +299,7 @@ bot.on('message:text', async (ctx) => {
   if (allButtons.includes(text)) return;
   
   // It's a question - use AI!
-  const typingMsg = await ctx.reply('🤔 Thinking...');
+  const typingMsg = await ctx.reply('🤖 Thinking...');
   
   try {
     const answer = await getAIAnswer(text, language);
@@ -362,7 +309,7 @@ bot.on('message:text', async (ctx) => {
         parse_mode: 'Markdown'
       });
     } else {
-      // Fallback to basic answer
+      // AI failed, use fallback
       await ctx.api.editMessageText(ctx.chat.id, typingMsg.message_id, 
         getFallbackAnswer(text), { parse_mode: 'Markdown', reply_markup: mainKeyboard }
       );
@@ -391,7 +338,7 @@ Tourist visas can be extended at Thai immigration for 30 days (1900 baht fee).
     return `*Work Permit Info*
 
 To work legally in Thailand:
-1. Have a valid non-immigrant visa
+1. Have a valid non-immigrant visa (type B)
 2. Get a job offer from Thai company
 3. Company applies for work permit
 
