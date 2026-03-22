@@ -7,30 +7,37 @@ app.use(express.json());
 
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN || 'YOUR_BOT_TOKEN');
 
+// Webhook route for Telegram
+app.post('/webhook', async (req, res) => {
+  try {
+    await bot.handleUpdate(req.body);
+    res.sendOk();
+  } catch (err) {
+    console.error('Webhook error:', err);
+    res.status(500).send('Error');
+  }
+});
+
 // Health check - keep Render awake
 app.get('/', (req, res) => {
   res.send('Thai Visa Assistant is running! 🤖🇹🇭\n');
 });
 
-// Health check for Render
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 const port = process.env.PORT || 3000;
 
-// Start server first, then bot
-const server = app.listen(port, async () => {
+// Start server
+const server = app.listen(port, () => {
   console.log(`🤖 Thai Visa Assistant starting...`);
   console.log(`Web server listening on port ${port}`);
   
-  // Start bot with long polling
-  try {
-    await bot.start();
-    console.log('✅ Bot is polling for updates...');
-  } catch (err) {
-    console.error('❌ Bot start error:', err.message);
-  }
+  // Start bot
+  bot.start();
+  console.log('✅ Bot is running!');
 });
 
 // Graceful shutdown
