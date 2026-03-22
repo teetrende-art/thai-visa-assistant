@@ -7,7 +7,7 @@ app.use(express.json());
 
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN || 'YOUR_BOT_TOKEN');
 
-// Webhook route for Telegram
+// Webhook route for Telegram - NO bot.start() needed
 app.post('/webhook', async (req, res) => {
   try {
     await bot.handleUpdate(req.body);
@@ -30,21 +30,11 @@ app.get('/health', (req, res) => {
 
 const port = process.env.PORT || 3000;
 
-// Start server
-const server = app.listen(port, () => {
+// Start server (NO bot.start() - using webhooks only)
+app.listen(port, () => {
   console.log(`🤖 Thai Visa Assistant starting...`);
   console.log(`Web server listening on port ${port}`);
-  
-  // Start bot
-  bot.start();
-  console.log('✅ Bot is running!');
-});
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('Shutting down...');
-  await bot.stop();
-  server.close(() => process.exit(0));
+  console.log(`✅ Bot is using webhooks!`);
 });
 
 // Visa knowledge base
