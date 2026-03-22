@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Bot, Keyboard } = require('grammy');
 const express = require('express');
+const https = require('https');
 
 const app = express();
 app.use(express.json());
@@ -34,6 +35,77 @@ process.on('SIGTERM', async () => {
   await bot.stop();
   server.close(() => process.exit(0));
 });
+
+// AI Answer Function using OpenRouter
+async function getAIAnswer(question, language = 'en') {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  
+  if (!apiKey) {
+    return null; // No AI, use fallback
+  }
+
+  const langPrompt = language === 'th' 
+    ? 'Respond in Thai language.' 
+    : 'Respond in English.';
+
+  const systemPrompt = `You are a Thai visa expert assistant. You help people with Thai visas, extensions, work permits, retirement visas, elite visas, and immigration questions. 
+
+Current date: March 2026
+
+${langPrompt}
+
+Keep answers:
+- Accurate and up-to-date
+- Concise but informative
+- Friendly and helpful
+- Include relevant official links when helpful
+
+For complex cases, always suggest consulting with Thai immigration directly.`;
+
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify({
+      model: 'deepseek/deepseek-chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: question }
+      ],
+      max_tokens: 800
+    });
+
+    const options = {
+      hostname: 'openrouter.ai',
+      path: '/api/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://thai-visa-bot.vercel.app',
+        'X-Title': 'Thai Visa Assistant'
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(body);
+          if (response.choices && response.choices[0]) {
+            resolve(response.choices[0].message.content);
+          } else {
+            resolve(null);
+          }
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    });
+
+    req.on('error', () => resolve(null));
+    req.write(data);
+    req.end();
+  });
+}
 
 // Visa knowledge base
 const visaInfo = {
@@ -81,6 +153,11 @@ const visaInfo = {
   }
 };
 
+// Language keyboard
+const languageKeyboard = new Keyboard()
+  .text('🇬🇧 English')
+  .text('🇹🇭 ภาษาไทย');
+
 // Main keyboard
 const mainKeyboard = new Keyboard()
   .text('🏝️ Tourist Visa')
@@ -90,7 +167,7 @@ const mainKeyboard = new Keyboard()
   .text('🏖️ Retirement')
   .row()
   .text('📚 Education')
-  .text('❓ Ask a Question')
+  .text('❓ Ask AI')
   .row()
   .text('🔗 Quick Links')
   .text('🌐 Language');
@@ -100,7 +177,7 @@ bot.command('start', async (ctx) => {
   const welcomeMessage = `
 🛂 *Welcome to Thai Visa Assistant* 🛂
 
-Your personal guide to Thai visas! 🇹🇭
+Your AI-powered guide to Thai visas! 🇹🇭
 
 I can help you with:
 • Tourist visa extensions
@@ -108,6 +185,7 @@ I can help you with:
 • Work permit requirements
 • Retirement visa details
 • Education visa process
+• *Any question - just ask AI!*
 
 Just tap a button below or ask me anything! 💬
   `;
@@ -116,6 +194,19 @@ Just tap a button below or ask me anything! 💬
     reply_markup: mainKeyboard,
     parse_mode: 'Markdown'
   });
+});
+
+// Handle language selection
+bot.hears('🇬🇧 English', async (ctx) => {
+  ctx.session = ctx.session || {};
+  ctx.session.language = 'en';
+  await ctx.reply('✅ Language set to English!', { reply_markup: mainKeyboard });
+});
+
+bot.hears('🇹🇭 ภาษาไทย', async (ctx) => {
+  ctx.session = ctx.session || {};
+  ctx.session.language = 'th';
+  await ctx.reply('✅ ตั้งค่าภาษาเป็นไทยแล้ว!', { reply_markup: mainKeyboard });
 });
 
 // Handle visa type buttons
@@ -216,41 +307,71 @@ bot.hears('🔗 Quick Links', async (ctx) => {
   `, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
 });
 
-bot.hears('❓ Ask a Question', async (ctx) => {
+bot.hears('❓ Ask AI', async (ctx) => {
   await ctx.reply(`
-Ask me anything about Thai visas!
+*🤖 Ask the AI*
 
-Example questions:
-• "Can I extend my tourist visa?"
-• "How do I get a work permit?"
-• "What's the cheapest long-term visa?"
-• "Can I convert tourist to work visa?"
+Ask me anything about Thai visas! The AI can help with:
 
-Type your question and I'll answer! 🤖
-  `, { reply_markup: mainKeyboard });
+• Specific visa questions
+• Complex situations
+• Latest requirements
+• Personal circumstances
+• And more!
+
+Just type your question below! 💬
+  `, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
 });
 
 bot.hears('🌐 Language', async (ctx) => {
   await ctx.reply(`
-*Language Options / เปลี่ยนภาษา*
+*🌐 Select Language / เลือกภาษา*
 
-🌍 English - Coming soon
-🇹🇭 ภาษาไทย - Coming soon
-
-Stay tuned! 🇹🇭
-  `, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
+Choose your preferred language:
+  `, { parse_mode: 'Markdown', reply_markup: languageKeyboard });
 });
 
-// Handle questions
+// Handle all text messages - AI powered!
 bot.on('message:text', async (ctx) => {
   const text = ctx.message.text;
+  
+  // Ignore commands and button presses
   if (text.startsWith('/')) return;
   
-  const questionPatterns = ['ask', 'how', 'what', 'can i', 'extend', 'visa', 'work', 'retire', 'elite', 'long term', 'stay', 'renew', 'convert'];
-  const isQuestion = questionPatterns.some(p => text.toLowerCase().includes(p));
+  // Get user language preference
+  ctx.session = ctx.session || {};
+  const language = ctx.session.language || 'en';
   
-  if (isQuestion && !mainKeyboard.texts().includes(text)) {
-    await ctx.reply(getFallbackAnswer(text), { parse_mode: 'Markdown', reply_markup: mainKeyboard });
+  // Check if it's a button press
+  const allButtons = [
+    '🏝️ Tourist Visa', '💳 Elite Visa', '💼 Work Permit', '🏖️ Retirement',
+    '📚 Education', '❓ Ask AI', '🔗 Quick Links', '🌐 Language',
+    '🇬🇧 English', '🇹🇭 ภาษาไทย'
+  ];
+  
+  if (allButtons.includes(text)) return;
+  
+  // It's a question - use AI!
+  const typingMsg = await ctx.reply('🤔 Thinking...');
+  
+  try {
+    const answer = await getAIAnswer(text, language);
+    
+    if (answer) {
+      await ctx.api.editMessageText(ctx.chat.id, typingMsg.message_id, answer, {
+        parse_mode: 'Markdown'
+      });
+    } else {
+      // Fallback to basic answer
+      await ctx.api.editMessageText(ctx.chat.id, typingMsg.message_id, 
+        getFallbackAnswer(text), { parse_mode: 'Markdown', reply_markup: mainKeyboard }
+      );
+    }
+  } catch (err) {
+    console.error('AI Error:', err);
+    await ctx.api.editMessageText(ctx.chat.id, typingMsg.message_id,
+      getFallbackAnswer(text), { parse_mode: 'Markdown', reply_markup: mainKeyboard }
+    );
   }
 });
 
