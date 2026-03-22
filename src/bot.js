@@ -7,34 +7,32 @@ app.use(express.json());
 
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN || 'YOUR_BOT_TOKEN');
 
-// Webhook route for Telegram - NO bot.start() needed
-app.post('/webhook', async (req, res) => {
-  try {
-    await bot.handleUpdate(req.body);
-    res.sendOk();
-  } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).send('Error');
-  }
-});
-
-// Health check - keep Render awake
+// Health check - pinger should hit this
 app.get('/', (req, res) => {
   res.send('Thai Visa Assistant is running! 🤖🇹🇭\n');
 });
 
-// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 const port = process.env.PORT || 3000;
 
-// Start server (NO bot.start() - using webhooks only)
-app.listen(port, () => {
+// Start server
+const server = app.listen(port, async () => {
   console.log(`🤖 Thai Visa Assistant starting...`);
-  console.log(`Web server listening on port ${port}`);
-  console.log(`✅ Bot is using webhooks!`);
+  console.log(`Server on port ${port}`);
+  
+  // Use long polling
+  await bot.start();
+  console.log('✅ Bot started with long polling!');
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('Shutting down...');
+  await bot.stop();
+  server.close(() => process.exit(0));
 });
 
 // Visa knowledge base
@@ -243,11 +241,9 @@ Stay tuned! 🇹🇭
   `, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
 });
 
-// Handle questions (simple fallback responses)
+// Handle questions
 bot.on('message:text', async (ctx) => {
   const text = ctx.message.text;
-  
-  // Ignore commands and button presses
   if (text.startsWith('/')) return;
   
   const questionPatterns = ['ask', 'how', 'what', 'can i', 'extend', 'visa', 'work', 'retire', 'elite', 'long term', 'stay', 'renew', 'convert'];
@@ -267,9 +263,7 @@ function getFallbackAnswer(question) {
 Tourist visas can be extended at Thai immigration for 30 days (1900 baht fee).
 
 📍 Where: Immigration offices (not at airports!)
-📝 Bring: Passport, TM.30, photos, proof of funds
-
-For best service, go early morning. Bangkok office = busy but efficient.`;
+📝 Bring: Passport, TM.30, photos, proof of funds`;
   }
   
   if (q.includes('work') || q.includes('job')) {
@@ -280,68 +274,46 @@ To work legally in Thailand:
 2. Get a job offer from Thai company
 3. Company applies for work permit
 
-⚠️ You cannot work on tourist visa!
-
-Cost: ~100-500 baht depending on duration.
-Processing: 7-30 days.`;
+⚠️ You cannot work on tourist visa!`;
   }
   
   if (q.includes('elite') || q.includes('membership')) {
     return `*Thailand Elite Visa*
 
-Membership-based long-term visa program:
+Membership-based long-term visa:
 • Elite Easy: $16,000 (5 years)
 • Elite Premium: $32,000 (10 years)  
 • Elite Ultimate: $60,000 (20 years)
 
-Includes:
-✓ Unlimited stay
-✓ Fast-track immigration
-✓ Airport assistance
-✓ 24/7 concierge
-
-Apply through official Thailand Elite website.`;
+Includes: ✓ Unlimited stay ✓ Fast-track ✓ Airport assist ✓ 24/7 concierge`;
   }
   
   if (q.includes('retire') || q.includes('retirement')) {
     return `*Retirement Visa Requirements*
 
 ✅ Age 50+
-✅ 800,000 baht in Thai bank (3 months before application)
+✅ 800,000 baht in Thai bank (3 months)
 ✅ OR Monthly income 65,000+ baht
 
-📋 Documents:
-- Passport
-- TM.30 (address proof)
-- Medical certificate
-- Police certificate
-
-Valid 1 year, renewable annually!`;
+📋 Documents: Passport, TM.30, Medical, Police certificate`;
   }
   
   if (q.includes('convert') || q.includes('change')) {
     return `*Converting Visa Types*
 
-Common conversions:
-• Tourist → Work: Possible (leave Thailand, apply for non-B from embassy)
-• Tourist → Education: Possible (enroll in school)
-• Tourist → Elite: Not possible (must apply from home country)
-
-⚠️ Best to apply for correct visa from start!
-
-Check with Thai embassy in your country.`;
+• Tourist → Work: Leave Thailand, apply for non-B from embassy
+• Tourist → Education: Enroll in school
+• Tourist → Elite: Not possible (must apply from home country)`;
   }
   
   return `*Good Question!*
-
-For specific advice, I'd need more details about your situation.
 
 In general:
 • Tourist visa: 60 days (+30 extension)
 • Most flexible: Elite or Work permit
 • Best for long-term: Retirement (50+) or Education
 
-Want more detail on any of these? Just ask! 🇹🇭`;
+Want more detail? Just ask! 🇹🇭`;
 }
 
 // Error handling
