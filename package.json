@@ -8,7 +8,8 @@
     "dev": "node src/bot.js"
   },
   "dependencies": {
-    "grammy": "^1.21.1",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "express": "^5.2.1",
+    "grammy": "^1.21.1"
   }
 }

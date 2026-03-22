@@ -1,21 +1,29 @@
 require('dotenv').config();
 const { Bot, Keyboard } = require('grammy');
+const express = require('express');
 const https = require('https');
-const http = require('http');
 
-// Simple web server for Render health checks
-const port = process.env.PORT || 3000;
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Thai Visa Assistant is running! 🤖🇹🇭\n');
+const app = express();
+app.use(express.json());
+
+const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN || 'YOUR_BOT_TOKEN');
+
+// Webhook route
+app.post(`/webhook/${process.env.TELEGRAM_BOT_TOKEN}`, async (req, res) => {
+  await bot.handleUpdate(req.body);
+  res.sendOk();
 });
 
-server.listen(port, () => {
+// Health check
+app.get('/', (req, res) => {
+  res.send('Thai Visa Assistant is running! 🤖🇹🇭\n');
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`🤖 Thai Visa Assistant starting...`);
   console.log(`Web server listening on port ${port}`);
 });
-
-// Initialize bot
-const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN || 'YOUR_BOT_TOKEN');
 
 // Visa knowledge base
 const visaInfo = {
@@ -212,97 +220,32 @@ Type your question and I'll answer! 🤖
   `, { reply_markup: mainKeyboard });
 });
 
-// Handle questions (AI-powered)
+bot.hears('🌐 Language', async (ctx) => {
+  await ctx.reply(`
+*Language Options / เปลี่ยนภาษา*
+
+🌍 English - Coming soon
+🇹🇭 ภาษาไทย - Coming soon
+
+Stay tuned! 🇹🇭
+  `, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
+});
+
+// Handle questions (simple fallback responses)
 bot.on('message:text', async (ctx) => {
   const text = ctx.message.text;
   
   // Ignore commands and button presses
-  if (text.startsWith('/') || Object.values(visaInfo).some(v => text.includes(v.name.split(' ')[0]))) {
-    return;
-  }
+  if (text.startsWith('/')) return;
   
-  // Check if it's a visa-related question
-  const questionPatterns = [
-    'ask', 'how', 'what', 'can i', 'can i extend', 'visa', 'extension', 
-    'work', 'retire', 'elite', 'long term', 'stay', 'renew', 'convert'
-  ];
-  
+  const questionPatterns = ['ask', 'how', 'what', 'can i', 'extend', 'visa', 'work', 'retire', 'elite', 'long term', 'stay', 'renew', 'convert'];
   const isQuestion = questionPatterns.some(p => text.toLowerCase().includes(p));
   
   if (isQuestion && !mainKeyboard.texts().includes(text)) {
-    // Send "thinking" message
-    const thinkingMsg = await ctx.reply('🤔 Let me check that for you...');
-    
-    try {
-      const answer = await getAIAnswer(text);
-      await ctx.reply(answer, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
-    } catch (error) {
-      await ctx.reply('Sorry, I had trouble finding that answer. Try asking about a specific visa type above! 😅', { reply_markup: mainKeyboard });
-    }
-    
-    // Delete thinking message
-    try {
-      await ctx.api.deleteMessage(ctx.chat.id, thinkingMsg.message_id);
-    } catch (e) {}
+    await ctx.reply(getFallbackAnswer(text), { parse_mode: 'Markdown', reply_markup: mainKeyboard });
   }
 });
 
-// Simple AI answer function (using OpenRouter)
-async function getAIAnswer(question) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  
-  if (!apiKey) {
-    return getFallbackAnswer(question);
-  }
-  
-  const systemPrompt = `You are a Thai visa expert assistant. Answer questions about Thai visas accurately and helpfully. Keep answers concise but informative. Always mention that for official info, users should check immigration.go.th. Current date: March 2026.`;
-  
-  return new Promise((resolve, reject) => {
-    const data = JSON.stringify({
-      model: 'deepseek/deepseek-chat',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: question }
-      ],
-      max_tokens: 500
-    });
-
-    const options = {
-      hostname: 'openrouter.ai',
-      path: '/api/v1/chat/completions',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://thai-visa-assistant.com',
-        'X-Title': 'Thai Visa Assistant'
-      }
-    };
-
-    const req = https.request(options, (res) => {
-      let body = '';
-      res.on('data', (chunk) => body += chunk);
-      res.on('end', () => {
-        try {
-          const response = JSON.parse(body);
-          if (response.choices && response.choices[0]) {
-            resolve(response.choices[0].message.content);
-          } else {
-            resolve(getFallbackAnswer(question));
-          }
-        } catch (e) {
-          resolve(getFallbackAnswer(question));
-        }
-      });
-    });
-
-    req.on('error', () => resolve(getFallbackAnswer(question)));
-    req.write(data);
-    req.end();
-  });
-}
-
-// Fallback answers when AI is unavailable
 function getFallbackAnswer(question) {
   const q = question.toLowerCase();
   
@@ -393,6 +336,3 @@ Want more detail on any of these? Just ask! 🇹🇭`;
 bot.catch((err) => {
   console.error('Bot error:', err);
 });
-
-console.log('🤖 Thai Visa Assistant starting...');
-bot.start();
