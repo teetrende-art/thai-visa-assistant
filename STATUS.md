@@ -17,8 +17,5 @@
 1. User needs to redeploy on Render (manual deploy latest commit)
 2. User needs to fix bot description in @BotFather
 
-### Bot Token
-`8679186515:AAFRQogJX_PwRLXF-oKqKEVAPX1tK8aLHUM`
-
 ### Telegram Bot Username
 @Thai_VisaBot
